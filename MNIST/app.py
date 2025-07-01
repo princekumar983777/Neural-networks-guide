@@ -4,40 +4,62 @@ import numpy as np
 import base64
 import re
 import io
-import pickle
+from PIL import Image
 from model import DigitRecognition
+from tensorflow.keras.models import load_model
+
  # Assuming model.py is in the same directory
 
 app = Flask(__name__)
 
-# Load your model
+# ANN model
 W1 = np.load('npVectors/W1.npy')
 b1 = np.load('npVectors/b1.npy')
 W2 = np.load('npVectors/W2.npy')
 b2 = np.load('npVectors/b2.npy')
-model = DigitRecognition(W1, b1, W2, b2)
+ann_model = DigitRecognition(W1, b1, W2, b2)
 
-def preprocess(image_data):
-    # Remove header and decode
+# CNN model
+cnn_model = load_model('mnsit_cnn.keras')  # or .h5
+
+def preprocess(image_data, for_cnn=False):
     image_data = re.sub('^data:image/.+;base64,', '', image_data)
     img_bytes = base64.b64decode(image_data)
-    image = Image.open(io.BytesIO(img_bytes)).convert('L')
-    image = image.resize((28, 28))
-    image = 255 - np.array(image)  # Invert: black digit on white background
+    image = Image.open(io.BytesIO(img_bytes)).convert('L').resize((28, 28))
+    image = np.array(image)  # Invert
+
     image = image / 255.0
-    image = image.reshape(1, 784)
-    return image
+
+    image_to_save = image.reshape(28, 28) * 255
+    image_to_save = Image.fromarray(image_to_save.astype('uint8'))
+    image_to_save.save('debug_ann_input.png')
+
+    if for_cnn:
+        print('called for cnn')
+        return image.reshape(1, 28, 28, 1)
+    else:
+        print('call for ann')
+        return image.reshape(1, 784)
 
 @app.route('/')
 def home():
     return render_template('index.html')
 
+
 @app.route('/predict', methods=['POST'])
 def predict():
     data = request.get_json()
-    img = preprocess(data['image'])
-    prediction = model.predict(img)
-    return jsonify({'prediction': int(prediction)})
+    image_data = data['image']
+    model_type = data.get('model', 'ann')  # default to 'ann'
+
+    if model_type == 'cnn':
+        img = preprocess(image_data, for_cnn=True)
+        prediction = int(np.argmax(cnn_model.predict(img)))
+    else:
+        img = preprocess(image_data, for_cnn=False)
+        prediction = int(ann_model.predict(img))
+
+    return jsonify({'prediction': prediction})
 
 if __name__ == '__main__':
     app.run(debug=True)
