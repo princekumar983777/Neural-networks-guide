@@ -1,0 +1,8 @@
+.venv
+vevn/
+__pycache__/
+*.pyc
+*.pyo
+
+# Ignore the .env file if it exists
+.env
